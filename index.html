@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>役物材料 計算 - iPad Pro Edition</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap');
+        body { font-family: 'Noto Sans JP', sans-serif; -webkit-tap-highlight-color: transparent; }
+        input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=number] { -moz-appearance: textfield; }
+        
+        /* 立体ボタンの共通スタイル */
+        .btn-3d { transition: all 0.1s; position: relative; top: 0; }
+        .btn-3d:active { transform: translateY(2px); border-bottom-width: 0 !important; }
+        
+        .btn-3d-blue { background: #2563eb; border-bottom: 4px solid #1e3a8a; }
+        .btn-3d-orange { background: #ea580c; border-bottom: 4px solid #9a3412; }
+        .btn-3d-zinc { background: #3f3f46; border-bottom: 4px solid #18181b; }
+        .btn-3d-red { background: #dc2626; border-bottom: 4px solid #7f1d1d; }
+        .btn-3d-tab-active { background: #3f3f46; border-bottom: 3px solid #18181b; color: #f97316; }
+        
+        .animate-fade-in { animation: fadeIn 0.2s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* スクロールバーのカスタマイズ */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 10px; }
+    </style>
+</head>
+<body class="bg-zinc-950 text-zinc-100 min-h-screen">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo } = React;
+
+        const Icon = ({ name, size = 24, className = "" }) => {
+            const paths = {
+                calculator: <path d="M4 21v-13a3 3 0 0 1 3 -3h10a3 3 0 0 1 3 3v13a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />,
+                plus: <path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />,
+                undo: <path d="M3 7v6h6M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />,
+                rotate: <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />,
+                save: <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2zM17 21v-8H7v8M7 3v5h8" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />,
+                trash: <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />,
+                x: <path d="M18 6 6 18M6 6l12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            };
+            return (
+                <svg width={size} height={size} viewBox="0 0 24 24" className={className} xmlns="http://www.w3.org/2000/svg">
+                    {paths[name] || null}
+                </svg>
+            );
+        };
+
+        function App() {
+            const [activeTab, setActiveTab] = useState('material');
+
+            // --- 計算用ステート ---
+            const [calcInput, setCalcInput] = useState('');
+            const [totalDim, setTotalDim] = useState(''); 
+            const [cumulativeSum, setCumulativeSum] = useState(0); 
+            const [stdLength, setStdLength] = useState('');
+            const [overlap, setOverlap] = useState('');
+            const [currentProductName, setCurrentProductName] = useState('');
+            const [totalHistory, setTotalHistory] = useState([]); 
+            const [isClearModalOpen, setIsClearModalOpen] = useState(false);
+
+            // --- ローカルストレージからのデータ読み込み ---
+            const [history, setHistory] = useState(() => {
+                try {
+                    const saved = localStorage.getItem('gradient_calc_history');
+                    return saved ? JSON.parse(saved) : [];
+                } catch(e) { return []; }
+            });
+            const [savedTallies, setSavedTallies] = useState(() => {
+                try {
+                    const saved = localStorage.getItem('gradient_calc_savedTallies');
+                    return saved ? JSON.parse(saved) : [];
+                } catch(e) { return []; }
+            });
+
+            // 勾配用
+            const [y, setY] = useState('');
+            const [x, setX] = useState('');
+            const [c, setC] = useState('');
+            const [a, setA] = useState('');
+            const [b, setB] = useState('');
+
+            const calcInputRef = useRef(null);
+
+            const format = (val) => {
+                if (val === '' || val === undefined || val === null) return '';
+                const clean = val.toString().replace(/,/g, '');
+                const num = parseFloat(clean);
+                return isNaN(num) ? val : Math.round(num).toLocaleString();
+            };
+            const unformat = (val) => val.toString().replace(/,/g, '');
+            const toNum = (val) => parseFloat(unformat(val)) || 0;
+            const handleFocus = (e) => e.target.select();
+
+            const addValue = () => {
+                const val = toNum(calcInput);
+                if (val > 0) {
+                    setTotalHistory(prev => [...prev, { cumulativeSum, totalDim }]);
+                    const nextSum = cumulativeSum + val;
+                    const nextTotal = (toNum(totalDim) + val).toString();
+                    setCumulativeSum(nextSum);
+                    setTotalDim(nextTotal);
+                    setCalcInput('');
+                    setTimeout(() => calcInputRef.current?.focus(), 50);
+                }
+            };
+
+            const undoTotal = () => {
+                if (totalHistory.length === 0) return;
+                const prev = [...totalHistory];
+                const last = prev.pop();
+                setCumulativeSum(last.cumulativeSum);
+                setTotalDim(last.totalDim);
+                setTotalHistory(prev);
+            };
+
+            const resetTotal = () => {
+                setTotalHistory(prev => [...prev, { cumulativeSum, totalDim }]);
+                setCumulativeSum(0);
+                setTotalDim('');
+            };
+
+            const clearDistance = () => setTotalDim('');
+
+            const materialResult = useMemo(() => {
+                const total = toNum(totalDim);
+                const std = toNum(stdLength);
+                const over = toNum(overlap);
+                const effective = std - over;
+                if (total > 0 && effective > 0) {
+                    const pieces = Math.ceil(total / effective);
+                    return { pieces, remainder: (pieces * effective) - total };
+                }
+                return { pieces: 0, remainder: 0 };
+            }, [totalDim, stdLength, overlap]);
+
+            const saveToHistoryManually = () => {
+                if (materialResult.pieces === 0 || stdLength === '') return;
+                const newHistory = [{
+                    id: Date.now().toString(),
+                    total: totalDim,
+                    std: stdLength,
+                    overlap: overlap,
+                    pieces: materialResult.pieces,
+                    remainder: materialResult.remainder,
+                    createdAt: Date.now()
+                }, ...history].slice(0, 50);
+                setHistory(newHistory);
+                try { localStorage.setItem('gradient_calc_history', JSON.stringify(newHistory)); } catch(e){}
+            };
+
+            const deleteHistoryItem = (id) => {
+                const newHistory = history.filter(item => item.id !== id);
+                setHistory(newHistory);
+                try { localStorage.setItem('gradient_calc_history', JSON.stringify(newHistory)); } catch(e){}
+            };
+
+            const saveHistoryTotal = () => {
+                if (history.length === 0) return;
+                const pieces = history.reduce((acc, cur) => acc + (cur.pieces || 0), 0);
+                const totalDistance = history.reduce((acc, cur) => acc + toNum(cur.total), 0);
+                const totalRemainder = history.reduce((acc, cur) => acc + toNum(cur.remainder), 0);
+                const newTallies = [{
+                    id: Date.now().toString(),
+                    name: currentProductName,
+                    pieces,
+                    totalDistance,
+                    totalRemainder,
+                    createdAt: Date.now()
+                }, ...savedTallies];
+                setSavedTallies(newTallies);
+                try { localStorage.setItem('gradient_calc_savedTallies', JSON.stringify(newTallies)); } catch(e){}
+                setCurrentProductName('');
+            };
+
+            const deleteTallyItem = (id) => {
+                const newTallies = savedTallies.filter(t => t.id !== id);
+                setSavedTallies(newTallies);
+                try { localStorage.setItem('gradient_calc_savedTallies', JSON.stringify(newTallies)); } catch(e){}
+            };
+
+            const updateTallyName = (id, name) => {
+                const newTallies = savedTallies.map(t => t.id === id ? { ...t, name } : t);
+                setSavedTallies(newTallies);
+                try { localStorage.setItem('gradient_calc_savedTallies', JSON.stringify(newTallies)); } catch(e){}
+            };
+
+            const confirmClearHistory = () => {
+                setHistory([]);
+                try { localStorage.removeItem('gradient_calc_history'); } catch(e){}
+                setIsClearModalOpen(false);
+            };
+
+            // --- 勾配計算ロジック ---
+            const updateFromY = (v) => {
+                const cl = unformat(v); setY(cl); const n = parseFloat(cl);
+                if (!isNaN(n)) {
+                    setX(((Math.atan(n / 100) * 180) / Math.PI).toFixed(2));
+                    if (toNum(c) !== 0) {
+                        setA(Math.round((n / 100) * toNum(c)).toString());
+                        setB(Math.round(Math.sqrt(Math.pow((n / 100) * toNum(c), 2) + Math.pow(toNum(c), 2))).toString());
+                    }
+                } else setX('');
+            };
+            const updateFromX = (v) => {
+                const cl = unformat(v); setX(cl); const n = parseFloat(cl);
+                if (!isNaN(n)) {
+                    const g = 100 * Math.tan((n * Math.PI) / 180);
+                    setY(g.toFixed(2));
+                    if (toNum(c) !== 0) {
+                        setA(Math.round((g / 100) * toNum(c)).toString());
+                        setB(Math.round(Math.sqrt(Math.pow((g / 100) * toNum(c), 2) + Math.pow(toNum(c), 2))).toString());
+                    }
+                } else setY('');
+            };
+            const updateFromC = (v) => {
+                const cl = unformat(v); setC(cl); const nC = parseFloat(cl); const nY = toNum(y);
+                if (nC !== 0 && !isNaN(nY)) {
+                    setA(Math.round((nY / 100) * nC).toString());
+                    setB(Math.round(Math.sqrt(Math.pow((nY / 100) * nC, 2) + Math.pow(nC, 2))).toString());
+                }
+            };
+            const updateFromA = (v) => {
+                const cl = unformat(v); setA(cl); const nA = parseFloat(cl); const nC = toNum(c);
+                if (!isNaN(nA) && nC !== 0) {
+                    setB(Math.round(Math.sqrt(Math.pow(nA, 2) + Math.pow(nC, 2))).toString());
+                    const g = (nA / nC) * 100;
+                    setY(g.toFixed(2)); setX(((Math.atan(g / 100) * 180) / Math.PI).toFixed(2));
+                }
+            };
+            const updateFromB = (v) => {
+                const cl = unformat(v); setB(cl); const nB = parseFloat(cl); const nA = toNum(a);
+                if (!isNaN(nB) && !isNaN(nA) && nB >= nA && nB !== 0) {
+                    const nC = Math.sqrt(Math.pow(nB, 2) - Math.pow(nA, 2)); setC(Math.round(nC).toString());
+                    if (nC !== 0) {
+                        const g = (nA / nC) * 100;
+                        setY(g.toFixed(2)); setX(((Math.atan(g / 100) * 180) / Math.PI).toFixed(2));
+                    }
+                }
+            };
+
+            const isValidSlope = (y !== '' || x !== '') && (c !== '' || a !== '' || b !== '');
+
+            return (
+                <div className="max-w-6xl mx-auto p-4 md:p-8 space-y-6">
+                    {isClearModalOpen && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+                            <div className="bg-zinc-900 border border-zinc-700 rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-fade-in">
+                                <h3 className="text-xl font-bold text-white mb-2 text-center">履歴の全削除</h3>
+                                <p className="text-zinc-400 text-sm mb-6 text-center">保存履歴をすべて削除します。<br/>本当によろしいですか？</p>
+                                <div className="flex gap-3">
+                                    <button onClick={() => setIsClearModalOpen(false)} className="flex-1 py-3 rounded-xl font-bold btn-3d btn-3d-zinc text-white">キャンセル</button>
+                                    <button onClick={confirmClearHistory} className="flex-1 py-3 rounded-xl font-bold btn-3d btn-3d-red text-white">削除する</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    <header className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-zinc-800 pb-6">
+                        <div className="flex items-center gap-4">
+                            <div className="w-14 h-14 rounded-2xl shadow-xl border border-zinc-700 shrink-0 bg-gradient-to-br from-zinc-800 to-zinc-950 flex flex-col items-center justify-center relative overflow-hidden">
+                                <div className="absolute -right-2 -top-2 w-8 h-8 bg-blue-600 rounded-full blur-xl opacity-40"></div>
+                                <div className="absolute -left-2 -bottom-2 w-6 h-6 bg-orange-600 rounded-full blur-xl opacity-30"></div>
+                                <div className="relative z-10 flex items-baseline tracking-tighter">
+                                    <span className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-zinc-400 italic">K</span>
+                                    <span className="text-lg font-black text-blue-500 italic ml-0.5">R</span>
+                                </div>
+                            </div>
+                            <div>
+                                <h1 className="text-2xl font-bold text-white leading-none">役物材料 計算</h1>
+                                <p className="text-xs text-zinc-500 font-bold uppercase tracking-widest mt-1">KYOWA ROOF / iPad Pro Edition</p>
+                            </div>
+                        </div>
+                        <nav className="flex bg-zinc-900 rounded-2xl p-1 shadow-inner w-full md:w-80">
+                            <button onClick={() => setActiveTab('material')} className={`flex-1 py-2 rounded-xl text-lg font-black transition-all btn-3d ${activeTab === 'material' ? 'btn-3d-tab-active shadow-lg' : 'text-zinc-500'}`}>材料</button>
+                            <button onClick={() => setActiveTab('slope')} className={`flex-1 py-2 rounded-xl text-lg font-black transition-all btn-3d ${activeTab === 'slope' ? 'btn-3d-tab-active shadow-lg' : 'text-zinc-500'}`}>勾配</button>
+                        </nav>
+                    </header>
+
+                    {activeTab === 'material' ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-fade-in items-start">
+                            {/* 左カラム: 入力系 */}
+                            <div className="space-y-6">
+                                <div className="space-y-1">
+                                    <label className="text-sm font-bold text-zinc-400 ml-1">品名</label>
+                                    <input type="text" value={currentProductName} onFocus={handleFocus} onChange={(e) => setCurrentProductName(e.target.value)} className="w-full bg-zinc-900 border-2 border-zinc-600 rounded-2xl py-4 px-4 text-lg text-zinc-200 outline-none font-bold transition-colors shadow-inner focus:border-zinc-400" placeholder="例：水切り、笠木..." />
+                                </div>
+
+                                <section className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2 text-center">
+                                        <label className="text-sm font-bold text-zinc-400">長さ（本 / mm）</label>
+                                        <input type="text" inputMode="decimal" value={format(stdLength)} onFocus={handleFocus} onChange={(e) => setStdLength(unformat(e.target.value))} className="w-full h-16 bg-zinc-900 border-2 border-zinc-600 rounded-2xl text-2xl text-white text-center outline-none font-bold shadow-inner" placeholder="0" />
+                                    </div>
+                                    <div className="space-y-2 text-center">
+                                        <label className="text-sm font-bold text-zinc-400">重ね（mm）</label>
+                                        <input type="text" inputMode="decimal" value={format(overlap)} onFocus={handleFocus} onChange={(e) => setOverlap(unformat(e.target.value))} className="w-full h-16 bg-zinc-900 border-2 border-zinc-600 rounded-2xl text-2xl text-white text-center outline-none font-bold shadow-inner" placeholder="0" />
+                                    </div>
+                                </section>
+
+                                <div className="space-y-2 text-center">
+                                    <label className="text-sm font-bold text-zinc-400">総距離（mm）</label>
+                                    <div className="relative h-16 group">
+                                        <input type="text" inputMode="decimal" value={format(totalDim)} onFocus={handleFocus} onChange={(e) => setTotalDim(unformat(e.target.value))} className="w-full h-full bg-zinc-900 border-2 border-zinc-600 rounded-2xl text-3xl text-white text-center outline-none font-bold pr-16 shadow-inner focus:border-zinc-500 transition-all" placeholder="0" />
+                                        <button onClick={clearDistance} className="absolute right-1 top-1 bottom-1 w-14 flex items-center justify-center rounded-xl text-zinc-500 hover:text-zinc-300 active:scale-95 transition-all"><Icon name="x" size={28} /></button>
+                                    </div>
+                                </div>
+
+                                <section className="bg-zinc-900 p-5 rounded-3xl border border-zinc-800 space-y-4 shadow-xl">
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-bold text-zinc-400 ml-1 uppercase">距離の加算計算</label>
+                                        <div className="flex gap-3 items-stretch h-16">
+                                            <input ref={calcInputRef} type="text" inputMode="decimal" value={format(calcInput)} onFocus={handleFocus} onChange={(e) => setCalcInput(unformat(e.target.value))} onKeyDown={(e) => e.key === 'Enter' && addValue()} className="flex-1 min-w-0 bg-zinc-950 border-2 border-orange-500 rounded-2xl text-2xl text-white text-center focus:border-orange-400 outline-none shadow-inner font-bold transition-colors" placeholder="0" />
+                                            <button onClick={addValue} className="w-16 shrink-0 rounded-2xl text-white flex items-center justify-center shadow-lg btn-3d btn-3d-blue"><Icon name="plus" size={32} /></button>
+                                        </div>
+                                    </div>
+                                    <div className="flex justify-between items-center px-2 pt-3 border-t border-zinc-800">
+                                        <span className="text-sm font-bold text-zinc-400 uppercase tracking-widest">加算合計</span>
+                                        <div className="flex items-center gap-4">
+                                            <span className="text-2xl font-mono font-black text-white">{format(cumulativeSum) || '0'}</span>
+                                            <div className="flex items-center gap-2">
+                                                <button onClick={undoTotal} disabled={totalHistory.length === 0} className={`p-2.5 rounded-xl btn-3d ${totalHistory.length === 0 ? 'text-zinc-800' : 'btn-3d-zinc text-zinc-400'}`}><Icon name="undo" size={24} /></button>
+                                                <button onClick={resetTotal} className="p-2.5 rounded-xl btn-3d btn-3d-zinc text-zinc-400 active:text-red-400"><Icon name="rotate" size={24} /></button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </section>
+
+                                <section className="grid grid-cols-2 gap-4">
+                                    <div className="bg-zinc-900 py-3 px-4 rounded-3xl border-2 border-green-500 flex flex-col items-center shadow-lg"><span className="text-xs font-bold text-zinc-300 uppercase mb-1">計算本数</span><div className="flex items-baseline gap-1"><span className="text-4xl font-mono font-black text-green-500">{materialResult.pieces}</span><span className="text-base font-bold text-zinc-400">本</span></div></div>
+                                    <div className="bg-zinc-900 py-3 px-4 rounded-3xl border-2 border-blue-500 flex flex-col items-center shadow-lg"><span className="text-xs font-bold text-zinc-300 uppercase mb-1">端材寸法</span><div className="flex items-baseline gap-1"><span className="text-4xl font-mono font-black text-blue-500">{format(materialResult.remainder)}</span><span className="text-base font-bold text-zinc-400">mm</span></div></div>
+                                </section>
+
+                                <button onClick={saveToHistoryManually} disabled={materialResult.pieces === 0} className={`w-full py-5 rounded-3xl font-black text-xl flex items-center justify-center gap-3 shadow-2xl btn-3d ${materialResult.pieces === 0 ? 'bg-zinc-800 text-zinc-600 border-none opacity-50 cursor-not-allowed' : 'btn-3d-orange text-white'}`}><Icon name="save" size={28} />この内容を履歴に保存</button>
+                            </div>
+
+                            {/* 右カラム: 履歴・合計系 */}
+                            <div className="space-y-6">
+                                <section className="space-y-4">
+                                    <div className="flex items-center justify-between ml-1">
+                                        <h3 className="text-lg font-bold text-zinc-200 uppercase flex items-center gap-2">
+                                            <span className="w-1.5 h-6 bg-orange-500 rounded-full"></span>保存履歴
+                                        </h3>
+                                        <div className="flex items-center gap-3 shrink-0">
+                                            <button onClick={saveHistoryTotal} className="h-10 px-4 rounded-xl text-sm font-black flex items-center gap-2 btn-3d btn-3d-orange text-white whitespace-nowrap"><Icon name="save" size={18} />合計として保存</button>
+                                            <button onClick={() => setIsClearModalOpen(true)} className="h-10 w-12 flex items-center justify-center rounded-xl btn-3d btn-3d-zinc text-zinc-300 active:text-red-500"><Icon name="trash" size={20} /></button>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="bg-zinc-900 py-4 px-6 rounded-3xl border-2 border-zinc-700 shadow-xl bg-gradient-to-br from-zinc-900 to-zinc-950">
+                                        <div className="flex flex-col gap-2">
+                                            <div className="flex items-baseline justify-between">
+                                                <span className="text-zinc-400 text-sm font-bold">履歴の総距離:</span>
+                                                <span className="text-zinc-100 text-xl font-black font-mono">{format(history.reduce((a,c)=>a+toNum(c.total),0))} mm</span>
+                                            </div>
+                                            <div className="flex items-center justify-between pt-2 border-t border-zinc-800">
+                                                <div className="flex flex-col">
+                                                    <span className="text-zinc-400 text-xs font-bold mb-1">総本数</span>
+                                                    <div className="flex items-baseline gap-1">
+                                                        <span className="text-3xl font-mono font-black text-green-500 leading-none">{history.reduce((a,c)=>a+(c.pieces||0),0)}</span>
+                                                        <span className="text-sm font-bold text-zinc-300">本</span>
+                                                    </div>
+                                                </div>
+                                                <div className="flex flex-col items-end">
+                                                    <span className="text-zinc-400 text-xs font-bold mb-1">総端材</span>
+                                                    <span className="text-blue-400 text-2xl font-mono font-bold">{format(history.reduce((a,c)=>a+toNum(c.remainder),0))} mm</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
+                                        {history.length === 0 ? <div className="text-center py-12 bg-zinc-900/20 border border-dashed border-zinc-800 rounded-3xl italic text-zinc-600 text-sm font-bold">履歴はありません</div> : 
+                                        history.map(item => (
+                                            <div key={item.id} className="bg-zinc-900 border border-zinc-800 rounded-2xl flex items-stretch shadow-sm animate-fade-in overflow-hidden hover:border-zinc-700 transition-colors">
+                                                <div className="flex flex-col justify-center min-w-0 flex-1 py-3 px-5">
+                                                    <div className="flex items-baseline gap-2 text-zinc-400 text-sm font-bold leading-tight"><span>距離:</span><span className="text-zinc-200 font-mono text-lg">{format(item.total)} mm</span></div>
+                                                    <div className="flex items-center gap-6 min-w-0 leading-none mt-2">
+                                                        <div className="flex items-baseline gap-1 shrink-0"><span className="text-2xl font-mono font-black text-green-500">{item.pieces}</span><span className="text-xs text-zinc-400 font-bold">本</span></div>
+                                                        <div className="flex items-baseline gap-1 border-l border-zinc-800 pl-6 truncate"><span className="text-xl font-mono font-black text-blue-500">{format(item.remainder)}</span><span className="text-xs text-zinc-400 font-bold">mm</span></div>
+                                                        <div className="text-[10px] text-zinc-600 font-bold ml-auto shrink-0">L:{format(item.std)} / O:{format(item.overlap)}</div>
+                                                    </div>
+                                                </div>
+                                                <button onClick={() => deleteHistoryItem(item.id)} className="w-14 shrink-0 bg-zinc-900/50 hover:bg-red-500/10 text-zinc-500 hover:text-red-500 active:bg-red-500 active:text-white flex items-center justify-center border-l border-zinc-800 transition-all"><Icon name="trash" size={22} /></button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </section>
+
+                                <section className="space-y-4 pt-6 border-t border-zinc-800">
+                                    <h3 className="text-lg font-black text-orange-500 ml-1 font-bold uppercase flex items-center gap-2">
+                                        <span className="w-1.5 h-6 bg-orange-500 rounded-full"></span>品名別 合計リスト
+                                    </h3>
+                                    <div className="space-y-3">
+                                        {savedTallies.length === 0 ? <div className="text-center py-10 bg-zinc-900/10 border border-dashed border-zinc-800 rounded-3xl italic text-zinc-600 text-sm font-bold">履歴の合計を品名ごとに保存できます</div> : 
+                                        savedTallies.map(t => (
+                                            <div key={t.id} className="bg-zinc-900 rounded-3xl border-2 border-orange-500/50 flex items-stretch shadow-lg animate-fade-in overflow-hidden">
+                                                <div className="flex-1 py-4 px-5 flex flex-col gap-3">
+                                                    <div className="flex flex-col gap-1">
+                                                        <div className="flex items-baseline justify-between">
+                                                            <span className="text-zinc-400 text-xs font-bold uppercase tracking-widest">Total Distance</span>
+                                                            <span className="text-zinc-100 text-xl font-black font-mono">{format(t.totalDistance)} mm</span>
+                                                        </div>
+                                                        <div className="flex items-center justify-between mt-1">
+                                                            <div className="flex items-baseline gap-2">
+                                                                <span className="text-zinc-500 text-xs font-bold">本数:</span>
+                                                                <div className="flex items-baseline gap-1">
+                                                                    <span className="text-2xl font-mono font-black text-green-500 leading-none">{t.pieces}</span>
+                                                                    <span className="text-sm font-bold text-zinc-400">本</span>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-baseline gap-2">
+                                                                <span className="text-zinc-500 text-xs font-bold">端材:</span>
+                                                                <span className="text-blue-400 text-lg font-mono font-bold">{format(t.totalRemainder || 0)} mm</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    <input type="text" value={t.name} onFocus={handleFocus} onChange={(e) => updateTallyName(t.id, e.target.value)} className="w-full bg-zinc-950 border border-zinc-800 rounded-xl py-2 px-4 text-lg text-white outline-none font-bold focus:border-zinc-500 transition-colors shadow-inner" placeholder="品名を入力してください" />
+                                                </div>
+                                                <button onClick={() => deleteTallyItem(t.id)} className="w-14 shrink-0 bg-zinc-900/50 hover:bg-red-500/10 text-zinc-500 hover:text-red-500 active:bg-red-500 active:text-white flex items-center justify-center border-l border-zinc-800 transition-all"><Icon name="trash" size={22} /></button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </section>
+                            </div>
+                        </div>
+                    ) : (
+                        /* 勾配計算画面 */
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-fade-in items-start">
+                            {/* 左カラム: 入力系 */}
+                            <div className="space-y-8">
+                                <section className="grid grid-cols-2 gap-4 text-center">
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-bold text-zinc-400 uppercase tracking-widest">勾配 (寸/%)</label>
+                                        <input type="text" inputMode="decimal" value={y} onFocus={handleFocus} onChange={(e) => updateFromY(e.target.value)} className="w-full h-16 bg-zinc-900 border-2 border-zinc-700 rounded-2xl text-2xl text-white text-center outline-none font-bold shadow-inner focus:border-zinc-500 transition-all" placeholder="0" />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-bold text-zinc-400 uppercase tracking-widest">角度 (deg)</label>
+                                        <input type="text" inputMode="decimal" value={x} onFocus={handleFocus} onChange={(e) => updateFromX(e.target.value)} className="w-full h-16 bg-zinc-900 border-2 border-zinc-700 rounded-2xl text-2xl text-white text-center outline-none font-bold shadow-inner focus:border-zinc-500 transition-all" placeholder="0" />
+                                    </div>
+                                </section>
+                                
+                                <div className="space-y-3 text-center w-full">
+                                    <label className="text-base font-bold text-zinc-300 tracking-[0.2em] uppercase font-black">水平寸法 (底辺)</label>
+                                    <div className="relative h-20">
+                                        <input type="text" inputMode="decimal" value={format(c)} onFocus={handleFocus} onChange={(e) => updateFromC(e.target.value)} className="w-full h-full bg-zinc-900 border-4 border-orange-600 rounded-3xl text-4xl text-white text-center outline-none font-black shadow-2xl focus:border-orange-500 transition-all" placeholder="0" />
+                                        <span className="absolute right-6 top-1/2 -translate-y-1/2 text-orange-500 font-black text-xl italic">mm</span>
+                                    </div>
+                                    <p className="text-xs text-zinc-500 font-bold">※水平寸法を入力すると、高さと斜辺が自動計算されます</p>
+                                </div>
+
+                                <div className="p-6 bg-zinc-900/50 border border-zinc-800 rounded-3xl space-y-4">
+                                    <h4 className="text-sm font-bold text-zinc-400 uppercase tracking-widest text-center border-b border-zinc-800 pb-2">計算のヒント</h4>
+                                    <ul className="text-xs text-zinc-500 space-y-2 font-medium">
+                                        <li className="flex gap-2"><span className="text-orange-500">●</span> 勾配を入力すると自動的に角度が算出されます。</li>
+                                        <li className="flex gap-2"><span className="text-orange-500">●</span> 高さを入力して、逆引きで勾配を出すことも可能です。</li>
+                                        <li className="flex gap-2"><span className="text-orange-500">●</span> iPadではスワイプで「材料」と「勾配」を切替可能です。</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            {/* 右カラム: プレビュー・結果系 */}
+                            <div className="space-y-6">
+                                <div className="bg-zinc-900 rounded-[2.5rem] p-6 border border-zinc-700 shadow-2xl overflow-hidden relative">
+                                    <div className="flex items-center justify-between mb-6 font-bold text-zinc-200 uppercase tracking-widest border-b border-zinc-800 pb-3">
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></div>
+                                            リアルタイム勾配図面
+                                        </div>
+                                        <span className="text-xs text-zinc-500">SCALE: AUTO</span>
+                                    </div>
+                                    
+                                    <div className="flex justify-center h-64 bg-zinc-950/50 rounded-3xl border border-zinc-800/50 shadow-inner relative">
+                                        <svg viewBox="0 0 320 200" className="w-full h-full p-4 overflow-visible">
+                                            {/* 底辺 */}
+                                            <path d="M 40 160 L 260 160" stroke="#f97316" strokeWidth="5" strokeLinecap="round" fill="none" />
+                                            <text x="150" y="190" fill="#fb923c" fontSize="20" textAnchor="middle" fontWeight="900" style={{ paintOrder: 'stroke', stroke: '#000', strokeWidth: '4px' }}>{format(c) || '-'}</text>
+                                            
+                                            {isValidSlope && (
+                                                <g>
+                                                    {/* 高さ */}
+                                                    <path d={`M 260 160 L 260 ${160 - Math.max(15, Math.min(120, (toNum(y)||0)*1.2))}`} stroke="#22c55e" strokeWidth="5" strokeLinecap="round" fill="none" />
+                                                    <text x="275" y={160 - (Math.max(15, Math.min(120, (toNum(y)||0)*1.2)) / 2)} fill="#4ade80" fontSize="20" dominantBaseline="middle" fontWeight="900" style={{ paintOrder: 'stroke', stroke: '#000', strokeWidth: '4px' }}>{format(a) || '-'}</text>
+                                                    
+                                                    {/* 斜辺 */}
+                                                    <path d={`M 40 160 L 260 ${160 - Math.max(15, Math.min(120, (toNum(y)||0)*1.2))}`} stroke="#3b82f6" strokeWidth="5" strokeLinecap="round" fill="none" />
+                                                    <text x="130" y={160 - (Math.max(15, Math.min(120, (toNum(y)||0)*1.2)) / 2) - 20} fill="#60a5fa" fontSize="20" textAnchor="middle" fontWeight="900" style={{ paintOrder: 'stroke', stroke: '#000', strokeWidth: '5px' }}>{format(b) || '-'}</text>
+                                                </g>
+                                            )}
+                                        </svg>
+                                    </div>
+                                </div>
+
+                                <section className="grid grid-cols-2 gap-4 pb-4 text-center w-full">
+                                    <div className="bg-zinc-900 p-5 rounded-[2rem] border-2 border-green-500 flex flex-col items-center min-w-0 shadow-xl transition-transform hover:scale-[1.02]">
+                                        <span className="text-sm font-black text-zinc-100 uppercase mb-4 tracking-widest">垂直高さ</span>
+                                        <div className="w-full relative">
+                                            <input type="text" inputMode="decimal" value={format(a)} onFocus={handleFocus} onChange={(e) => updateFromA(e.target.value)} className="w-full bg-zinc-950 border border-green-900 rounded-2xl py-4 px-2 text-3xl font-mono font-black text-green-500 text-center outline-none shadow-inner focus:border-green-400 transition-all" placeholder="0" />
+                                        </div>
+                                        <p className="text-[10px] text-zinc-500 mt-4 font-bold leading-tight uppercase tracking-tighter">Horizontal Dim. Fixed</p>
+                                    </div>
+                                    <div className="bg-zinc-900 p-5 rounded-[2rem] border-2 border-blue-500 flex flex-col items-center min-w-0 shadow-xl transition-transform hover:scale-[1.02]">
+                                        <span className="text-sm font-black text-zinc-100 uppercase mb-4 tracking-widest">斜辺長さ</span>
+                                        <div className="w-full relative">
+                                            <input type="text" inputMode="decimal" value={format(b)} onFocus={handleFocus} onChange={(e) => updateFromB(e.target.value)} className="w-full bg-zinc-950 border border-blue-900 rounded-2xl py-4 px-2 text-3xl font-mono font-black text-blue-500 text-center outline-none shadow-inner focus:border-blue-400 transition-all" placeholder="0" />
+                                        </div>
+                                        <p className="text-[10px] text-zinc-500 mt-4 font-bold leading-tight uppercase tracking-tighter">Height Fixed</p>
+                                    </div>
+                                </section>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
